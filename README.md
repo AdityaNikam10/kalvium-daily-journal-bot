@@ -1,101 +1,94 @@
-# Kalvium Daily Journal Bot
+# Kalvium Daily Journal
 
-Automatically submits the "Simulated Work Daily Journal" Google Form every
-day at 4:30 PM IST via GitHub Actions, marking "working day, present"
-and filling the four follow-up questions with varied generated content.
+The primary submission schedule is the **Submit Kalvium daily journal** task in
+ChatGPT, configured for **16:30 Asia/Kolkata every day**, starting 14 September
+2026. It uses the signed-in Kalvium Google account and the actual dated work
+notes supplied in the Form Automation project, or a work source explicitly
+identified by the user.
 
-## How it works
+## Current state
 
-- `daily_fill.py` reuses a saved, logged-in Google session (no password
-  ever stored) to open the form and submit it headlessly.
-- The session is stored as the `AUTH_STATE` repo secret and restored at the
-  start of each workflow run.
-- The schedule lives in `.github/workflows/daily-journal.yml`
-  (`0 11 * * *` UTC = 4:30 PM IST, every day).
+- Google sign-in and access to the four journal fields were verified.
+- The daily ChatGPT task has been created and enabled.
+- No live response was submitted during setup: today's actual work answers
+  were not supplied. End-to-end submission remains unverified until the first
+  real dated entry is available.
+- The old GitHub cron has been removed to avoid two independent submitters.
+  GitHub Actions now runs validation tests only and does not read AUTH_STATE.
+- The old random answer generator has been removed. Missing attendance or
+  work details cause a request for the missing information, not a fabricated
+  submission.
 
-## Setup (for your own account)
+## Daily information
 
-Each person needs their **own copy of this repo** and their **own login
-session** — the bot submits as whichever Google account you log in with.
+Provide the current India date, attendance (present, absent, campus holiday,
+or no scheduled Simulated Work), key tasks, solved problems, unresolved
+problems, and the plan for the next Simulated Work day. Explicitly say when
+there were no blockers. Keep private notes in ChatGPT or local files, not in
+this public repository.
 
-### 1. Prerequisites
+The task submits only after all required information is known, skips confirmed
+holidays and unscheduled days, checks the intended Google account, and treats
+only an explicit recorded-response confirmation as success. It checks prior
+results to avoid duplicates and does not blindly retry an uncertain submission.
+Notes from another date are not reused as today's work.
 
-- [Git](https://git-scm.com/downloads)
-- [Python 3.12+](https://www.python.org/downloads/)
-- [GitHub CLI](https://cli.github.com/) (`gh`), logged in via `gh auth login`
+Google can require sign-in again. If that happens, the task will report the
+blocker and request secure sign-in; no automation can guarantee uninterrupted
+authentication. The configured time is the start of the task, not a guarantee
+that Google has received the response at that exact second.
 
-### 2. Get the code
+## Optional local fallback
 
-Fork this repo on GitHub, then clone your fork:
+Pause the ChatGPT task before using a separate local submitter for the same
+date. The local receipt guard is not shared with ChatGPT or other computers.
 
-```
-git clone https://github.com/<your-username>/<your-fork>.git
-cd <your-fork>
-```
+Install Python 3.12+, the dependencies in `requirements.txt`, and Playwright
+Chromium. The existing `discover_form.py` is a local-only sign-in helper.
+Its `auth_state.json` contains reusable authentication credentials; never
+commit it or upload it to the public repository. ChatGPT's cloud sign-in does
+not refresh a locally saved session or the former GitHub AUTH_STATE secret.
 
-Make sure the repo is **private** (Settings → General → Danger Zone →
-Change visibility), since it will hold a secret tied to your Google login.
+Create a local, ignored `journal_entry.json` with these fields:
 
-### 3. Install dependencies
+| Field | Value |
+| --- | --- |
+| `date` | Today's India date, `YYYY-MM-DD` |
+| `attendance` | `present`, `absent`, `holiday`, or `not_scheduled` |
+| `tasks` | Actual tasks completed or worked on |
+| `solved` | Problems actually solved |
+| `pending` | Actual unresolved problems, or an explicit statement of none |
+| `plan` | Actual plan for the next Simulated Work day |
 
-```
-python -m venv venv
-venv\Scripts\python.exe -m pip install -r requirements.txt
-venv\Scripts\python.exe -m playwright install chromium
-```
+Validate without opening or submitting the form:
 
-(On macOS/Linux, use `venv/bin/python` instead of `venv\Scripts\python.exe`.)
-
-### 4. Log in and capture your session
-
-```
-venv\Scripts\python.exe discover_form.py
-```
-
-This opens a real browser window. Log into **your own** Kalvium Google
-account, wait until the form itself is visible, then press Enter in the
-terminal. This creates `auth_state.json` locally — it is never committed
-(see `.gitignore`); it only ever gets stored as an encrypted GitHub secret.
-
-### 5. Upload the session as a GitHub secret
-
-```
-gh secret set AUTH_STATE --repo <your-username>/<your-fork> < auth_state.json
-```
-
-### 6. Enable the workflow
-
-Push your clone to GitHub (if you haven't already), then check the
-**Actions** tab on your fork — GitHub sometimes disables scheduled
-workflows on forks by default, so click "Enable workflow" if prompted.
-
-That's it. The bot will now run automatically every day at 4:30 PM IST.
-
-## When the session expires ("logged out")
-
-Google Workspace can force re-authentication after some period. When that
-happens, the scheduled run fails and GitHub emails you a "workflow run
-failed" notification, with the log saying the session expired.
-
-To fix it, repeat steps 4 and 5 above:
-
-```
-venv\Scripts\python.exe discover_form.py
-gh secret set AUTH_STATE --repo <your-username>/<your-fork> < auth_state.json
+```sh
+python daily_fill.py --entry journal_entry.json
 ```
 
-## Manually triggering a run
+To submit locally, set `EXPECTED_EMAIL` to the intended Kalvium account in your
+shell, then run:
 
+```sh
+python daily_fill.py --entry journal_entry.json --submit
 ```
-gh workflow run daily-journal.yml --repo <your-username>/<your-fork>
+
+The local fallback supports present working days, skips holidays and
+unscheduled days, and directs absence entries to the interactive form because
+their additional questions have not been inspected. It writes a local attempt
+receipt immediately before clicking Submit. If the result is uncertain, inspect
+the form outcome before removing the attempt receipt. Do not retry blindly.
+The local browser submission path has not been tested against a live response;
+the data and duplicate guards are covered by unit tests.
+
+## Validation
+
+```sh
+python -m unittest -v test_daily_fill.py
 ```
 
-## Notes
+## References
 
-- The bot now runs every day, including weekends. Holidays/leave days
-  aren't auto-detected — the bot always marks "present". Disable the
-  workflow manually (Actions tab → ... → Disable workflow) on days you
-  don't want it to run.
-- Keep the repo **private** — `auth_state.json` grants access to your
-  Google session and should never be committed or shared. It only ever
-  lives as the encrypted `AUTH_STATE` secret.
+- [Google journal form](https://docs.google.com/forms/d/e/1FAIpQLSc8RRUAG8n8nPB9dm21m_MxwHQ-JuDnEj7GnvwEkWXykkKFuQ/viewform)
+- [GitHub scheduled workflow limitations](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)
+- [Playwright authentication state guidance](https://playwright.dev/python/docs/auth)

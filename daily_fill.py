@@ -1,150 +1,132 @@
+"""Optional local submitter using an explicit, dated journal entry.
+
+The primary daily schedule is the ChatGPT automation. This CLI is a manual
+fallback; it validates only unless --submit is supplied. Never run both for
+the same date. Browser session files contain credentials and stay local.
 """
-Daily Google Form submitter for the Kalvium Simulated Work journal.
-Reuses a saved logged-in session (auth_state.json) so no credentials are
-stored anywhere. Selects "working day, present" and fills the four
-follow-up questions with varied, generated content each run.
-"""
-import random
-import sys
-from playwright.sync_api import sync_playwright
+import argparse
+import json
+import os
+import re
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSc8RRUAG8n8nPB9dm21m_MxwHQ-JuDnEj7GnvwEkWXykkKFuQ/viewform"
-
-TASKS = [
-    "reviewing the onboarding module requirements",
-    "implementing form validation logic for the sign-up flow",
-    "refactoring the authentication middleware",
-    "writing unit tests for the payment processing module",
-    "debugging a state synchronization issue in the dashboard",
-    "optimizing a slow SQL query on the orders table",
-    "building a reusable component for the notifications panel",
-    "setting up CI checks for the pull request pipeline",
-    "pairing with a teammate on the API rate-limiting feature",
-    "documenting the internal API endpoints",
-    "exploring Docker basics for local environment setup",
-    "practicing a data structures and algorithms kata",
-    "attending a mentor session on system design fundamentals",
-    "cleaning up technical debt in the utils module",
-    "investigating a flaky test in the CI suite",
-    "improving error handling in the file upload service",
-    "working through a React state management exercise",
-    "reviewing a teammate's pull request",
-    "sketching out the schema for a new feature",
-    "reading through the style guide and applying it to recent code",
-]
-
-CHALLENGES_SOLVED = [
-    "figured out why an API call was returning stale data by fixing a caching bug",
-    "resolved a merge conflict that was blocking the feature branch",
-    "tracked down a null reference issue in a form submission handler",
-    "fixed a CSS layout bug that broke on smaller screens",
-    "got a failing test suite passing by correcting a mocked dependency",
-    "identified the root cause of a memory leak in a long-running process",
-    "worked out a tricky edge case in some input validation logic",
-    "resolved a race condition in an async function",
-    "corrected a misconfigured environment variable that was breaking the build",
-    "found and fixed an off-by-one error in a pagination function",
-]
-
-CHALLENGES_PENDING = [
-    "a performance bottleneck in a search feature that needs more profiling",
-    "an intermittent test failure that hasn't been reliably reproduced yet",
-    "a design decision on how to structure a new caching layer",
-    "an edge case in a file upload flow with very large files",
-    "a dependency version conflict that needs more investigation",
-    "understanding a legacy piece of code before it can safely be refactored",
-    "a UI inconsistency across browsers that needs cross-testing",
-    "clarifying requirements for the next feature before implementation",
-]
-
-PLANS = [
-    "continue implementing the remaining form fields and add validation",
-    "write additional test coverage for today's changes",
-    "start investigating the pending performance issue in more depth",
-    "pair with a teammate to unblock an open design question",
-    "review feedback on today's pull request and address comments",
-    "begin work on the next module in the curriculum",
-    "refactor today's code based on what was learned today",
-    "revisit the unresolved challenge with a fresh approach",
-    "document today's solution for future reference",
-    "prepare for the next mentor session by listing open questions",
-]
+IST = ZoneInfo("Asia/Kolkata")
+QUESTIONS = {
+    "tasks": "What were your key tasks for the day?",
+    "solved": "What challenges/problems did you solve today?",
+    "pending": "What challenges/problems you were NOT able to solve today and are planning to solve in upcoming days?",
+    "plan": "What is your plan for the next day of Simulated Work?",
+}
+STATUSES = {"present", "absent", "holiday", "not_scheduled"}
 
 
-def join_natural(items):
-    if len(items) == 1:
-        return items[0]
-    return ", ".join(items[:-1]) + " and " + items[-1]
+def india_date(now=None):
+    now = now or datetime.now(IST)
+    if now.tzinfo is None:
+        raise ValueError("A timezone-aware timestamp is required.")
+    return now.astimezone(IST).date().isoformat()
 
 
-def build_content():
-    tasks = random.sample(TASKS, k=random.randint(2, 3))
-    tasks_text = "Today I spent time " + join_natural(tasks) + "."
-    solved_text = "I " + random.choice(CHALLENGES_SOLVED) + "."
-    pending_text = "I'm still working through " + random.choice(CHALLENGES_PENDING) + "."
-    plan_text = "Tomorrow I plan to " + random.choice(PLANS) + "."
-    return tasks_text, solved_text, pending_text, plan_text
+def validate_entry(entry, today=None):
+    today = today or india_date()
+    if not isinstance(entry, dict):
+        raise ValueError("The journal entry must be a JSON object.")
+    if entry.get("date") != today:
+        raise ValueError("Only today's India date is accepted; no stale or future entries.")
+    if entry.get("attendance") not in STATUSES:
+        raise ValueError("Set attendance to present, absent, holiday, or not_scheduled.")
+    if entry["attendance"] == "present":
+        for key in QUESTIONS:
+            value = entry.get(key)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"Missing actual daily work detail: {key}.")
+    return entry
 
 
-def fill_question(page, title, text):
-    page.locator('div[role="listitem"]', has_text=title).locator("textarea").fill(text)
+def reserve_attempt(state_dir, date):
+    """Exclusive local claim: an uncertain attempt must be checked manually."""
+    state_dir.mkdir(parents=True, exist_ok=True)
+    receipt = state_dir / f"{date}.json"
+    try:
+        with receipt.open("x", encoding="utf-8") as stream:
+            json.dump({"date": date, "status": "attempting"}, stream)
+    except FileExistsError as exc:
+        raise ValueError("A submission was already attempted for this date. Check its outcome before retrying.") from exc
+    return receipt
 
 
-def submit():
-    tasks_text, solved_text, pending_text, plan_text = build_content()
+def submit(entry, expected_email, auth_state, state_dir):
+    validate_entry(entry)
+    if entry["attendance"] in {"holiday", "not_scheduled"}:
+        print("Skipped: no Simulated Work journal required for this date.")
+        return
+    if entry["attendance"] == "absent":
+        raise ValueError("Use the signed-in form for leave/absence; its additional questions need inspection.")
+    if not expected_email or "@" not in expected_email:
+        raise ValueError("Set EXPECTED_EMAIL to the Google account that must submit this journal.")
+    if not auth_state.is_file():
+        raise ValueError("Missing local Google session. Sign in using discover_form.py.")
+    if (state_dir / f"{entry['date']}.json").exists():
+        raise ValueError("A local attempt already exists for this date; inspect it before retrying.")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        context = browser.new_context(storage_state="auth_state.json")
-        page = context.new_page()
-        page.goto(FORM_URL, wait_until="networkidle")
+    from playwright.sync_api import expect, sync_playwright
 
-        if "accounts.google.com" in page.url:
-            page.screenshot(path="submit_failure.png", full_page=True)
-            browser.close()
-            sys.exit(
-                "Saved session has expired/logged out (redirected to Google sign-in). "
-                "Re-run discover_form.py locally and update the AUTH_STATE secret."
-            )
-
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
         try:
-            checkbox = page.get_by_role("checkbox").first
-            if checkbox.count() and not checkbox.is_checked():
-                checkbox.check()
-        except Exception:
-            pass
+            context = browser.new_context(storage_state=str(auth_state))
+            page = context.new_page()
+            page.goto(FORM_URL, wait_until="domcontentloaded")
+            if "accounts.google.com" in page.url:
+                raise ValueError("Google sign-in has expired. No submission was made.")
+            email_box = page.get_by_role("checkbox", name=f"Record {expected_email} as the email to be included with my response", exact=True)
+            expect(email_box).to_be_visible()
+            email_box.check()
+            page.get_by_role("radio", name="It was a working day, and I was present", exact=True).check()
+            page.get_by_role("button", name="Next", exact=True).click()
 
-        page.get_by_role("radio", name="It was a working day, and I was present").click()
-        page.get_by_role("button", name="Next").click()
-        page.wait_for_timeout(1500)
-        page.wait_for_load_state("networkidle")
+            for key, question in QUESTIONS.items():
+                answer = page.get_by_role("textbox", name=re.compile("^" + re.escape(question)))
+                answer.fill(entry[key])
+                expect(answer).to_have_value(entry[key])
+            page.get_by_role("button", name="Next", exact=True).click()
+            submit_button = page.get_by_role("button", name="Submit", exact=True)
+            expect(submit_button).to_be_visible()
+            expect(submit_button).to_be_enabled()
 
-        fill_question(page, "What were your key tasks for the day?", tasks_text)
-        fill_question(page, "did you solve today?", solved_text)
-        fill_question(page, "NOT able to solve today", pending_text)
-        fill_question(page, "plan for the next day of Simulated Work", plan_text)
-
-        page.get_by_role("button", name="Next").click()
-        page.wait_for_timeout(1500)
-        page.wait_for_load_state("networkidle")
-
-        page.get_by_role("button", name="Submit").click()
-        page.wait_for_timeout(1500)
-        page.wait_for_load_state("networkidle")
-
-        content = page.content().lower()
-        if "recorded" not in content and "thank you" not in content:
-            page.screenshot(path="submit_failure.png", full_page=True)
+            # Recheck date immediately before the irreversible action.
+            validate_entry(entry)
+            receipt = reserve_attempt(state_dir, entry["date"])
+            submit_button.click()
+            # The form intro also includes "recorded"; require the exact receipt.
+            expect(page.get_by_text("Your response has been recorded.", exact=True)).to_be_visible(timeout=15000)
+            temporary = receipt.with_suffix(".tmp")
+            temporary.write_text(json.dumps({"date": entry["date"], "status": "confirmed", "confirmed_at": datetime.now(IST).isoformat()}), encoding="utf-8")
+            temporary.replace(receipt)
+            print(f"Confirmed journal submission for {entry['date']}.")
+        finally:
             browser.close()
-            sys.exit("Submission may have failed — confirmation text not found.")
 
-        print("Form submitted successfully.")
-        print("Tasks:", tasks_text)
-        print("Solved:", solved_text)
-        print("Pending:", pending_text)
-        print("Plan:", plan_text)
-        browser.close()
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--entry", type=Path, default=Path("journal_entry.json"))
+    parser.add_argument("--auth-state", type=Path, default=Path("auth_state.json"))
+    parser.add_argument("--state-dir", type=Path, default=Path(".journal-state"))
+    parser.add_argument("--submit", action="store_true", help="Actually submit the dated entry; otherwise validate only.")
+    args = parser.parse_args()
+    try:
+        entry = validate_entry(json.loads(args.entry.read_text(encoding="utf-8")))
+        if args.submit:
+            submit(entry, os.environ.get("EXPECTED_EMAIL", ""), args.auth_state, args.state_dir)
+        else:
+            print(f"Validated entry for {entry['date']}; nothing submitted.")
+    except (ValueError, OSError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 if __name__ == "__main__":
-    submit()
+    main()

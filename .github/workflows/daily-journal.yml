@@ -1,39 +1,23 @@
-name: Daily Journal Submission
+name: Journal Validation
 
 "on":
-  schedule:
-    # 11:00 UTC = 16:30 IST, every day
-    - cron: "0 11 * * *"
-  workflow_dispatch: {}
+  push:
+  pull_request:
+  workflow_dispatch:
+
+# Daily submissions are owned by the ChatGPT task at 16:30 Asia/Kolkata.
+# No parallel cron submitter and no Google session in this workflow.
+permissions:
+  contents: read
 
 jobs:
-  submit:
+  validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          python -m playwright install --with-deps chromium
-
-      - name: Restore auth state
-        run: printf '%s' "$AUTH_STATE" > auth_state.json
-        env:
-          AUTH_STATE: ${{ secrets.AUTH_STATE }}
-
-      - name: Submit today's journal entry
-        run: python daily_fill.py
-
-      - name: Upload failure screenshot
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: submit-failure
-          path: submit_failure.png
-          if-no-files-found: ignore
+      - name: Check date, content, and duplicate guards
+        run: python -m unittest -v test_daily_fill.py

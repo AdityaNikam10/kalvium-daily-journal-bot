@@ -1,5 +1,12 @@
 venv/
+.venv/
 __pycache__/
 auth_state.json
 form_structure_raw.json
+form_structure.json
+form_page.html
 *.png
+journal_entry.json
+entries/
+.journal-state/
+.env
