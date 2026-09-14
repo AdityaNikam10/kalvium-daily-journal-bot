@@ -1,42 +1,52 @@
 # Kalvium Daily Journal
 
 The primary submission schedule is the **Submit Kalvium daily journal** task in
-ChatGPT, configured for **16:30 Asia/Kolkata every day**, starting 14 September
-2026. It uses the signed-in Kalvium Google account and the actual dated work
-notes supplied in the Form Automation project, or a work source explicitly
-identified by the user.
+ChatGPT, configured for **16:30 Asia/Kolkata every calendar day**, including
+weekends, starting 14 September 2026.
 
 ## Current state
 
-- Google sign-in and access to the four journal fields were verified.
-- The daily ChatGPT task has been created and enabled.
-- No live response was submitted during setup: today's actual work answers
-  were not supplied. End-to-end submission remains unverified until the first
-  real dated entry is available.
-- The old GitHub cron has been removed to avoid two independent submitters.
-  GitHub Actions now runs validation tests only and does not read AUTH_STATE.
-- The old random answer generator has been removed. Missing attendance or
-  work details cause a request for the missing information, not a fabricated
-  submission.
+- Google sign-in and all four writable journal fields were verified.
+- The daily ChatGPT task is enabled and does not require fresh daily notes.
+- The form was filled with the standard responses and advanced to the final
+  Submit page. Submit was not clicked during setup; a live receipt is still
+  pending the scheduled run.
+- The old GitHub cron was removed. GitHub Actions runs validation tests only.
+- The optional local CLI below is separate and still requires a dated entry.
+  It is not the daily scheduler.
 
-## Daily information
+## Standing responses
 
-Provide the current India date, attendance (present, absent, campus holiday,
-or no scheduled Simulated Work), key tasks, solved problems, unresolved
-problems, and the plan for the next Simulated Work day. Explicitly say when
-there were no blockers. Keep private notes in ChatGPT or local files, not in
-this public repository.
+The user requested generic submissions without a daily information request.
+The scheduled task uses these exact responses unless a dated override is given:
 
-The task submits only after all required information is known, skips confirmed
-holidays and unscheduled days, checks the intended Google account, and treats
-only an explicit recorded-response confirmation as success. It checks prior
-results to avoid duplicates and does not blindly retry an uncertain submission.
-Notes from another date are not reused as today's work.
+| Question | Standard response |
+| --- | --- |
+| Key tasks | Working on ongoing Simulated Work tasks. |
+| Problems solved | No specific resolved problem is documented in this entry. |
+| Unresolved problems | No specific unresolved problem is documented in this entry. |
+| Next-session plan | Continue working on the assigned Simulated Work tasks in the next session. |
 
-Google can require sign-in again. If that happens, the task will report the
-blocker and request secure sign-in; no automation can guarantee uninterrupted
-authentication. The configured time is the start of the task, not a guarantee
-that Google has received the response at that exact second.
+The configured attendance default is "It was a working day, and I was present",
+matching the user's selected form option. An explicit date-specific holiday or
+absence correction overrides it. Weekends alone do not cause a skipped run.
+The task does not generate random claims of specific accomplishments.
+
+## Submission behavior
+
+The verified present branch has three pages: email and attendance, four work
+answers, and a final page with a Submit button. The heading "Thank you for
+filling today's journal" appears BEFORE submission and is not a receipt.
+Success requires explicit response-recorded confirmation after clicking Submit.
+The form automatically emails a response copy to the signed-in account.
+
+Only the current India date is submitted. Prior run results and form state are
+checked for an existing submission; an uncertain attempt is not blindly retried.
+The old GitHub submitter is not run in parallel with the ChatGPT task.
+
+Google can require sign-in again. The task reports such blockers and requests
+secure sign-in when needed. The configured time is when the task starts;
+successful delivery at the exact second cannot be guaranteed.
 
 ## Optional local fallback
 
