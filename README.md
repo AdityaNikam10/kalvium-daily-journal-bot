@@ -48,6 +48,29 @@ Google can require sign-in again. The task reports such blockers and requests
 secure sign-in when needed. The configured time is when the task starts;
 successful delivery at the exact second cannot be guaranteed.
 
+## Failure audit and early sign-in check
+
+A read-only audit of the nine failed submission runs found eight Google
+session-expiry failures and one malformed saved-session JSON failure. The
+eight session failures were on 7-13 September 2026; the JSON failure was a
+manual run on 8 September. For example:
+[expired session](https://github.com/Shubham-Padkonde/kalvium-daily-journal-bot/actions/runs/34763782295)
+and [invalid session data](https://github.com/Shubham-Padkonde/kalvium-daily-journal-bot/actions/runs/34187466242).
+
+The separate **Check Kalvium journal sign-in** task is enabled at **16:00
+Asia/Kolkata every day**. It checks the intended Google account and form,
+preserves the draft, and alerts the user about login or access problems before
+the 16:30 submission. It never submits the form. A healthy check is silent.
+
+The submission task checks access again, permits one recovery from an ordinary
+transient failure before any Submit attempt, and avoids blind retries after a
+possibly completed submission. It distinguishes a confirmed response, a
+failure before submission, and an uncertain outcome.
+
+GitHub validation currently passes, but those checks do not submit the form.
+The replacement's first live scheduled response has not yet been verified.
+Google session expiry, service outages, and delayed execution remain possible.
+
 ## Optional local fallback
 
 Pause the ChatGPT task before using a separate local submitter for the same
