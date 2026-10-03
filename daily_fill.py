@@ -84,8 +84,13 @@ def submit(entry, expected_email, auth_state, state_dir):
                 raise ValueError("Google sign-in has expired. No submission was made.")
             email_box = page.get_by_role("checkbox", name=f"Record {expected_email} as the email to be included with my response", exact=True)
             expect(email_box).to_be_visible()
-            email_box.check()
-            page.get_by_role("radio", name="It was a working day, and I was present", exact=True).check()
+            if email_box.get_attribute("aria-checked") != "true":
+                email_box.click()
+            
+            present_radio = page.get_by_role("radio", name="It was a working day, and I was present", exact=True)
+            expect(present_radio).to_be_visible()
+            if present_radio.get_attribute("aria-checked") != "true":
+                present_radio.click()
             page.get_by_role("button", name="Next", exact=True).click()
 
             for key, question in QUESTIONS.items():
