@@ -53,30 +53,33 @@ with sync_playwright() as p:
         with open("form_structure_raw.json", "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
-        title = data[1][8][0][3] if len(data[1]) > 8 else None
-        questions = []
-        for item in data[1][1]:
-            q_title = item[1]
-            q_type = item[3]
-            entry_block = item[4][0]
-            entry_id = entry_block[0]
-            options = None
-            if entry_block[1]:
-                options = [opt[0] for opt in entry_block[1]]
-            required = bool(entry_block[2]) if len(entry_block) > 2 else None
-            questions.append({
-                "title": q_title,
-                "type_code": q_type,
-                "entry_id": f"entry.{entry_id}",
-                "options": options,
-                "required": required,
-            })
+        try:
+            title = data[1][8][0][3] if (len(data) > 1 and len(data[1]) > 8 and data[1][8] and data[1][8][0]) else None
+            questions = []
+            for item in data[1][1]:
+                q_title = item[1]
+                q_type = item[3]
+                entry_block = item[4][0]
+                entry_id = entry_block[0]
+                options = None
+                if entry_block[1]:
+                    options = [opt[0] for opt in entry_block[1]]
+                required = bool(entry_block[2]) if len(entry_block) > 2 else None
+                questions.append({
+                    "title": q_title,
+                    "type_code": q_type,
+                    "entry_id": f"entry.{entry_id}",
+                    "options": options,
+                    "required": required,
+                })
 
-        with open("form_structure.json", "w", encoding="utf-8") as f:
-            json.dump({"questions": questions}, f, indent=2, ensure_ascii=False)
+            with open("form_structure.json", "w", encoding="utf-8") as f:
+                json.dump({"questions": questions}, f, indent=2, ensure_ascii=False)
 
-        print(f"\nExtracted {len(questions)} questions -> form_structure.json")
-        for q in questions:
-            print(f"- [{q['entry_id']}] ({q['type_code']}) {q['title']!r} options={q['options']}")
+            print(f"\nExtracted {len(questions)} questions -> form_structure.json")
+            for q in questions:
+                print(f"- [{q['entry_id']}] ({q['type_code']}) {q['title']!r} options={q['options']}")
+        except Exception as err:
+            print(f"Session saved successfully, but structure parsing was skipped: {err}")
 
     browser.close()
