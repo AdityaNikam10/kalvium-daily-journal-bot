@@ -93,10 +93,17 @@ def submit(entry, expected_email, auth_state, state_dir):
                 present_radio.click()
             page.get_by_role("button", name="Next", exact=True).click()
 
-            for key, question in QUESTIONS.items():
-                answer = page.get_by_role("textbox", name=re.compile("^" + re.escape(question)))
-                answer.fill(entry[key])
-                expect(answer).to_have_value(entry[key])
+            keys = ["tasks", "solved", "pending", "plan"]
+            textboxes = page.get_by_role("textbox").all()
+            if len(textboxes) >= 4:
+                for i, key in enumerate(keys):
+                    textboxes[i].fill(entry[key])
+                    expect(textboxes[i]).to_have_value(entry[key])
+            else:
+                for key, question in QUESTIONS.items():
+                    answer = page.get_by_role("textbox", name=question, exact=False)
+                    answer.fill(entry[key])
+                    expect(answer).to_have_value(entry[key])
             page.get_by_role("button", name="Next", exact=True).click()
             submit_button = page.get_by_role("button", name="Submit", exact=True)
             expect(submit_button).to_be_visible()
