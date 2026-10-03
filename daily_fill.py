@@ -111,15 +111,44 @@ def submit(entry, expected_email, auth_state, state_dir):
             browser.close()
 
 
+STANDING_RESPONSES = {
+    "tasks": "Working on ongoing Simulated Work tasks.",
+    "solved": "No specific resolved problem is documented in this entry.",
+    "pending": "No specific unresolved problem is documented in this entry.",
+    "plan": "Continue working on the assigned Simulated Work tasks in the next session.",
+}
+
+
+def get_default_entry(today=None):
+    today = today or india_date()
+    return {
+        "date": today,
+        "attendance": "present",
+        **STANDING_RESPONSES,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--entry", type=Path, default=Path("journal_entry.json"))
     parser.add_argument("--auth-state", type=Path, default=Path("auth_state.json"))
     parser.add_argument("--state-dir", type=Path, default=Path(".journal-state"))
     parser.add_argument("--submit", action="store_true", help="Actually submit the dated entry; otherwise validate only.")
+    parser.add_argument("--auto", action="store_true", help="Use default standing responses for today if entry file is missing.")
     args = parser.parse_args()
     try:
-        entry = validate_entry(json.loads(args.entry.read_text(encoding="utf-8")))
+        if args.entry.exists():
+            entry = validate_entry(json.loads(args.entry.read_text(encoding="utf-8")))
+        elif args.auto or not args.entry.exists():
+            print("No journal_entry.json found; using standing default responses.")
+            entry = validate_entry(get_default_entry())
+        else:
+            raise ValueError(f"Entry file '{args.entry}' not found.")
+
+        # If auth_state file doesn't exist but AUTH_STATE_JSON env var is set, create it
+        if not args.auth_state.exists() and os.environ.get("AUTH_STATE_JSON"):
+            args.auth_state.write_text(os.environ["AUTH_STATE_JSON"], encoding="utf-8")
+
         if args.submit:
             submit(entry, os.environ.get("EXPECTED_EMAIL", ""), args.auth_state, args.state_dir)
         else:

@@ -1,23 +1,41 @@
-name: Journal Validation
+name: Submit Daily Journal
 
-"on":
-  push:
-  pull_request:
+on:
+  schedule:
+    # 11:00 UTC is 16:30 IST (4:30 PM India Standard Time) every day
+    - cron: '0 11 * * *'
   workflow_dispatch:
+  push:
+    branches: [ master, main ]
 
-# Daily submissions are owned by the ChatGPT task at 16:30 Asia/Kolkata.
-# No parallel cron submitter and no Google session in this workflow.
 permissions:
   contents: read
 
 jobs:
-  validate:
+  validate-and-submit:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Check date, content, and duplicate guards
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          playwright install chromium --with-deps
+
+      - name: Run unit tests
         run: python -m unittest -v test_daily_fill.py
+
+      - name: Run Daily Journal Submission
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        env:
+          EXPECTED_EMAIL: ${{ secrets.EXPECTED_EMAIL }}
+          AUTH_STATE_JSON: ${{ secrets.AUTH_STATE_JSON }}
+        run: |
+          python daily_fill.py --auto --submit

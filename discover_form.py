@@ -23,7 +23,7 @@ with sync_playwright() as p:
 
     input(
         "\nA browser window has opened.\n"
-        "1. Log into your shubham.padkonde.s73@kalvium.community Google account.\n"
+        "1. Log into your Kalvium Google account.\n"
         "2. Make sure you land on the actual form page (with the questions visible).\n"
         "Once you can see the form, come back here and press Enter...\n"
     )
