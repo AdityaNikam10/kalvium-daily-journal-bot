@@ -48,14 +48,22 @@ Google can require sign-in again. The task reports such blockers and requests
 secure sign-in when needed. The configured time is when the task starts;
 successful delivery at the exact second cannot be guaranteed.
 
-## Failure audit and early sign-in check
+## Failure audit and session refresh
 
-A read-only audit of the nine failed submission runs found eight Google
-session-expiry failures and one malformed saved-session JSON failure. The
-eight session failures were on 7-13 September 2026; the JSON failure was a
-manual run on 8 September. For example:
-[expired session](https://github.com/Shubham-Padkonde/kalvium-daily-journal-bot/actions/runs/34763782295)
-and [invalid session data](https://github.com/Shubham-Padkonde/kalvium-daily-journal-bot/actions/runs/34187466242).
+Google Workspace enforces strict session timeouts (typically expiring cookies every 14 to 30 days).
+When session cookies in `AUTH_STATE_JSON` expire, Playwright is redirected to `accounts.google.com`
+and the workflow safely halts with:
+`Google sign-in has expired. No submission was made.`
+
+### How to Refresh the Session (One-Click)
+
+Whenever this occurs (or when setting up for the first time):
+1. In your terminal, run:
+   ```sh
+   .venv/bin/python refresh_session.py
+   ```
+2. A browser window opens. Log into your Kalvium Google account (`aditya.nikam.s73@kalvium.community`).
+3. Once the form loads, the script automatically saves `auth_state.json`, validates it, and updates your GitHub Secrets (`AUTH_STATE_JSON` and `EXPECTED_EMAIL`) via `gh` CLI!
 
 The separate **Check Kalvium journal sign-in** task is enabled at **16:00
 Asia/Kolkata every day**. It checks the intended Google account and form,

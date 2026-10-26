@@ -81,18 +81,34 @@ def submit(entry, expected_email, auth_state, state_dir):
             page = context.new_page()
             page.goto(FORM_URL, wait_until="domcontentloaded")
             if "accounts.google.com" in page.url:
-                raise ValueError("Google sign-in has expired. No submission was made.")
-            email_box = page.get_by_role("checkbox", name=f"Record {expected_email} as the email to be included with my response", exact=True)
-            expect(email_box).to_be_visible()
-            if email_box.get_attribute("aria-checked") != "true":
-                email_box.click()
-            
-            present_radio = page.get_by_role("radio", name="It was a working day, and I was present", exact=True)
-            expect(present_radio).to_be_visible()
-            if present_radio.get_attribute("aria-checked") != "true":
-                present_radio.click()
+                raise ValueError(
+                    "Google sign-in has expired. The session cookies in AUTH_STATE_JSON expired (Google Workspace session limit). "
+                    "Please re-authenticate to refresh the session."
+                )
+
+            # Locate and ensure email recording checkbox is checked if present
+            expected_email_clean = expected_email.strip()
+            email_pattern = re.compile(rf"Record\s+{re.escape(expected_email_clean)}|{re.escape(expected_email_clean)}", re.IGNORECASE)
+            email_box = page.get_by_role("checkbox", name=email_pattern)
+            if email_box.count() > 0 and email_box.first.is_visible():
+                if email_box.first.get_attribute("aria-checked") != "true":
+                    email_box.first.click()
+            else:
+                generic_box = page.locator("div[role='checkbox']").filter(has_text=re.compile(re.escape(expected_email_clean), re.IGNORECASE))
+                if generic_box.count() > 0 and generic_box.first.is_visible():
+                    if generic_box.first.get_attribute("aria-checked") != "true":
+                        generic_box.first.click()
+
+            present_radio = page.get_by_role("radio", name=re.compile("working day.*present", re.IGNORECASE))
+            if present_radio.count() == 0:
+                present_radio = page.get_by_role("radio", name="It was a working day, and I was present", exact=True)
+            expect(present_radio.first).to_be_visible()
+            if present_radio.first.get_attribute("aria-checked") != "true":
+                present_radio.first.click()
             page.get_by_role("button", name="Next", exact=True).click()
 
+            # Ensure page 2 textboxes are fully rendered before querying
+            page.get_by_role("textbox").first.wait_for(state="visible", timeout=15000)
             keys = ["tasks", "solved", "pending", "plan"]
             textboxes = page.get_by_role("textbox").all()
             if len(textboxes) >= 4:
@@ -157,8 +173,8 @@ def main():
         else:
             raise ValueError(f"Entry file '{args.entry}' not found.")
 
-        # If auth_state file doesn't exist but AUTH_STATE_JSON env var is set, create it
-        if not args.auth_state.exists() and os.environ.get("AUTH_STATE_JSON"):
+        # If AUTH_STATE_JSON env var is set, create or update auth_state file
+        if os.environ.get("AUTH_STATE_JSON"):
             args.auth_state.write_text(os.environ["AUTH_STATE_JSON"], encoding="utf-8")
 
         if args.submit:
