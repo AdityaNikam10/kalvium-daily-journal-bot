@@ -55,11 +55,17 @@ def refresh():
         print("Navigating to form...")
         page.goto(FORM_URL)
 
+        # Bring Google Chrome window to front on macOS
+        try:
+            subprocess.run(["osascript", "-e", 'tell application "Google Chrome" to activate'], capture_output=True)
+        except Exception:
+            pass
+
         print("\nWaiting for sign-in... (Please sign in in the opened Chrome window)\n")
 
         start_time = time.time()
         logged_in = False
-        while time.time() - start_time < 300:  # 5 minutes timeout
+        while time.time() - start_time < 900:  # 15 minutes timeout
             try:
                 if page.is_closed():
                     if context.pages:
